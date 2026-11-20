@@ -22,6 +22,7 @@ export const routeModules = {
   album: trackLoad(() => import("../pages/album/AlbumPage")),
   activity: trackLoad(() => import("../pages/ActivityPage")),
   playlists: trackLoad(() => import("../pages/playlists/PlaylistsPage")),
+  playlistBuilder: trackLoad(() => import("../pages/playlists/PlaylistBuilderPage")),
   playlist: trackLoad(() => import("../pages/playlists/PlaylistDetailPage")),
   flows: trackLoad(() => import("../pages/playlists/FlowsPage")),
   flow: trackLoad(() => import("../pages/playlists/FlowDetailPage")),

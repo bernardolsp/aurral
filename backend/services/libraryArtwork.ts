@@ -526,10 +526,15 @@ export async function resolveChangedAlbumCovers(filePaths: Iterable<string>) {
   }
 }
 
-export function getLibraryArtwork(kind: LibraryArtworkKind, id: string) {
+export function getLibraryArtwork(
+  kind: LibraryArtworkKind,
+  id: string,
+  { cachedOnly = false } = {},
+) {
   if (!/^[1-9]\d*$/.test(id)) return Promise.resolve(null);
   const version = getLibraryArtworkVersions(kind, [id]).get(id);
   if (!version) return Promise.resolve(null);
+  if (cachedOnly) return readStoredArtwork(itemFolder(kind, Number(id)), version);
   const key = `${kind}:${id}:${version}`;
   let lookup = lookups.get(key);
   if (!lookup) {

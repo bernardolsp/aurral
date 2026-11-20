@@ -11,6 +11,7 @@ export const API_CONTRACT: { version: number; features: string[] } = {
     "communityPlaylists",
     "friends",
     "playlistMembers",
+    "playlistBuilder",
     "blends",
     "localPeople",
     "friendProfiles",

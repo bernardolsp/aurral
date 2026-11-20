@@ -24,6 +24,7 @@ import playEvents from "./playEvents.ts";
 import playQueue from "./playQueue.ts";
 import plex from "./plex.ts";
 import plugins from "./plugins.ts";
+import playlistBuilder from "./playlists/handlers/builder.ts";
 import playlistArtwork from "./playlists/handlers/artwork.ts";
 import flows from "./playlists/handlers/flows.ts";
 import playlistImports from "./playlists/handlers/imports.ts";
@@ -62,6 +63,7 @@ export const api = new Hono<AppEnv>()
   .route("/", requests)
   .route("/", playlistStreams)
   .route("/", playlistArtwork)
+  .route("/", playlistBuilder)
   .route("/", flows)
   .route("/", staticPlaylists)
   .route("/", playlistImports)

@@ -14,6 +14,7 @@ import {
 import { canPrefetchInBackground } from "../utils/requestScheduling.ts";
 import { resolveLinkQueryOptions } from "./resolveLinks.ts";
 import { routeModules } from "./routeModules.ts";
+import { playlistBuilderPath } from "./playlistPaths.ts";
 import { parseAlbumRef } from "../../../lib/albumPath.ts";
 import { isBrowseProvider } from "../../../lib/browsePlaylists.ts";
 
@@ -104,6 +105,7 @@ const ROUTES = [
       prefetchable(trendingChartsQueryOptions(userId)),
     ],
   },
+  { path: playlistBuilderPath, module: routeModules.playlistBuilder },
   {
     path: "/library/playlists/:playlistId",
     module: routeModules.playlist,

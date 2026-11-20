@@ -1,3 +1,5 @@
+import { playlistBuilderPath } from "./playlistPaths.ts";
+
 export type SectionId = "discover" | "library" | "activity" | "shows";
 
 function sectionOf(pathname: string): SectionId | "none" | "parent" {
@@ -11,7 +13,7 @@ function sectionOf(pathname: string): SectionId | "none" | "parent" {
   ) {
     return "discover";
   }
-  if (/^\/library(\/[^/]+)?$/.test(pathname)) return "library";
+  if (pathname === playlistBuilderPath || /^\/library(\/[^/]+)?$/.test(pathname)) return "library";
   if (pathname.startsWith("/activity/")) return "activity";
   if (pathname.startsWith("/shows")) return "shows";
   if (pathname.startsWith("/flows")) return "none";

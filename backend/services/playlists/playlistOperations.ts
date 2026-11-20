@@ -39,6 +39,7 @@ import type { DownloadJob } from "../downloadJobs/downloadTracker.ts";
 import type { ArtistMatchFields } from "../discovery/artistKeys.ts";
 import type { FlowConfig, StaticPlaylist } from "./flowPlaylistConfig.ts";
 import type { PlaylistTrack, PlaylistTrackInput } from "./playlistTracks.ts";
+import { setPlaylistArtworkState } from "../playlistArtworkState.ts";
 import { schedulePlaylistMbidEnrichment } from "../playlistMbidEnrichmentService.ts";
 import { filterBlockedArtistsForUser } from "../discovery/feedback.ts";
 import {
@@ -198,7 +199,26 @@ const indexedFileStmt = db.prepare<
   LIMIT 1
 `);
 
-const linkIndexedFiles = async (tracks: unknown, ownerUserId: unknown) => {
+const linkIndexedFiles = async (tracks: unknown, ownerUserId: unknown, libraryOnly: boolean) => {
+  const entries = unknownList(tracks).map((track) => ({
+    track,
+    file:
+      isRecord(track) && typeof track.path === "string" ? indexedFileStmt.get(track.path) : null,
+  }));
+  if (libraryOnly) {
+    for (const { track, file } of entries) {
+      if (
+        !file ||
+        !isRecord(track) ||
+        file.title !== track.trackName ||
+        file.artist_name !== track.artistName ||
+        file.album_title !== track.albumName ||
+        !(await fileExists(file.path))
+      ) {
+        throw new Error("A selected Library file is no longer available.");
+      }
+    }
+  }
   const libraryJobsByPath = new Map(
     downloadTracker
       .getAll()
@@ -206,9 +226,7 @@ const linkIndexedFiles = async (tracks: unknown, ownerUserId: unknown) => {
       .map((job) => [job.finalPath, job] as const),
   );
   const linked: unknown[] = [];
-  for (const track of Array.isArray(tracks) ? tracks : []) {
-    const file =
-      isRecord(track) && typeof track.path === "string" ? indexedFileStmt.get(track.path) : null;
+  for (const { track, file } of entries) {
     const input =
       file &&
       normalizePlaylistTrack({
@@ -232,7 +250,8 @@ const linkIndexedFiles = async (tracks: unknown, ownerUserId: unknown) => {
       linked.push({ ...input, canonicalJobId: existing.id });
       continue;
     }
-    const jobId = (await fileExists(finalPath)) && downloadTracker.addJob(input, "library");
+    const jobId =
+      (libraryOnly || (await fileExists(finalPath))) && downloadTracker.addJob(input, "library");
     if (!jobId) {
       linked.push(track);
       continue;
@@ -452,14 +471,15 @@ function afterTracksLinked(
     reusedJobIds,
   }: Pick<Awaited<ReturnType<typeof linkTracksToLibrary>>, "queuedJobIds" | "reusedJobIds">,
   reason: string,
+  libraryOnly = false,
 ) {
   playlistManager.requestPlaylistSync([playlistId]);
-  if (reusedJobIds.length > 0) playlistManager.scheduleScanLibrary();
+  if (!libraryOnly && reusedJobIds.length > 0) playlistManager.scheduleScanLibrary();
   recordPlaylistHistory(playlistId, {
     tracksQueued: queuedJobIds.length,
     tracksReused: reusedJobIds.length,
   });
-  schedulePlaylistMbidEnrichment(playlistId, { reason, priority: 5 });
+  if (!libraryOnly) schedulePlaylistMbidEnrichment(playlistId, { reason, priority: 5 });
 }
 
 async function createStaticPlaylist({
@@ -473,6 +493,7 @@ async function createStaticPlaylist({
   importSource = null,
   description = null,
   downloadMissing = true,
+  libraryOnly = false,
 }: OperationPayload = {}) {
   const safePlaylistId = String(playlistId || "").trim() || randomUUID();
   const existing = flowPlaylistConfig.getStaticPlaylist(safePlaylistId);
@@ -481,11 +502,18 @@ async function createStaticPlaylist({
   }
   const allowedTracks = filterBlockedPlaylistTracks(
     ownerUserId,
-    normalizeTrackList(await linkIndexedFiles(tracks, ownerUserId)),
+    normalizeTrackList(await linkIndexedFiles(tracks, ownerUserId, libraryOnly === true)),
   );
+  if (
+    libraryOnly &&
+    (allowedTracks.length !== (Array.isArray(tracks) ? tracks.length : 0) ||
+      allowedTracks.some((track) => !track.canonicalJobId))
+  ) {
+    throw new Error("A selected Library file is no longer available.");
+  }
   const linked = await linkTracksToLibrary(allowedTracks, {
     startedByPlaylist: safePlaylistId,
-    download: downloadMissing !== false,
+    download: !libraryOnly && downloadMissing !== false,
   });
   let playlist;
   try {
@@ -504,8 +532,18 @@ async function createStaticPlaylist({
     await discardLibraryJobs(linked.createdJobIds);
     throw error;
   }
+  if (libraryOnly) {
+    setPlaylistArtworkState(safePlaylistId, {
+      mode: "simple",
+      artistKey: null,
+      template: null,
+      sourceUrl: null,
+      fallbackSignature: null,
+    });
+  }
   await playlistManager.ensurePlaylistArtwork(safePlaylistId);
-  if (linked.tracks.length > 0) afterTracksLinked(safePlaylistId, linked, "static-playlist-create");
+  if (linked.tracks.length > 0)
+    afterTracksLinked(safePlaylistId, linked, "static-playlist-create", libraryOnly === true);
   else playlistManager.requestPlaylistSync([safePlaylistId]);
   return {
     success: true,

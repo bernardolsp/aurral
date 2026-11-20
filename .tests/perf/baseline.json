@@ -263,6 +263,14 @@
       "download_jobs"
     ]
   },
+  "playlist builder, Library": {
+    "queries": {
+      "cold": 16,
+      "warm": 16
+    },
+    "bytes": 17317,
+    "scans": []
+  },
   "activity queue": {
     "queries": {
       "cold": 12,

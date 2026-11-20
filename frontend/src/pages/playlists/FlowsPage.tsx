@@ -1,7 +1,7 @@
 import { usePlaylistArtwork } from "../../hooks/usePlaylistArtwork.ts";
 import { useState } from "react";
 import RouteLink from "../../components/RouteLink";
-import { Clock, Download, Plus, RefreshCw } from "../../components/icons";
+import { Clock, Download, ListMusic, Plus, RefreshCw } from "../../components/icons";
 import { SkeletonShape, SkeletonStatus, SkeletonText } from "../../components/Skeletons";
 import { useAuth } from "../../contexts/AuthContext";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
@@ -9,7 +9,7 @@ import { PlaylistArtworkThumb } from "../../components/PlaylistArtworkThumb.tsx"
 import { describeFlowRecipe, formatFlowSchedule } from "./flowPageUtils";
 import { getFlowActivity } from "./playlistPageUtils";
 import { usePlaylistStatus } from "./usePlaylistStatus";
-import { flowPath } from "../../navigation/playlistPaths";
+import { flowPath, playlistBuilderPath } from "../../navigation/playlistPaths";
 import type { Flow } from "../../utils/playlistStats.ts";
 import { FlowStarters, NewFlowModal } from "./FlowStarters.tsx";
 
@@ -127,8 +127,12 @@ export default function FlowsPage() {
           <div className="native-library-title">
             <h1 className="page-title">Flows</h1>
           </div>
-          {flows.length > 0 ? (
-            <div className="native-library-header-actions">
+          <div className="native-library-header-actions">
+            <RouteLink to={playlistBuilderPath} className="btn btn-secondary btn-sm">
+              <ListMusic aria-hidden="true" />
+              Playlist builder
+            </RouteLink>
+            {flows.length > 0 ? (
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -137,8 +141,8 @@ export default function FlowsPage() {
                 <Plus aria-hidden="true" />
                 New flow
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </header>
       <div className="native-library-content">{renderContent()}</div>

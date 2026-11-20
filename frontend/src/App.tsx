@@ -35,6 +35,7 @@ import { useWebSocketChannel } from "./hooks/useWebSocket";
 import { usePluginActionResults } from "./hooks/usePluginActions.ts";
 import { buildActivityPath, DEFAULT_ACTIVITY_VIEW } from "./navigation/activityNavConfig";
 import { routeModules } from "./navigation/routeModules.ts";
+import { playlistBuilderPath } from "./navigation/playlistPaths.ts";
 import { LegacyAlbumRedirect } from "./navigation/albumRoute.tsx";
 import { getBootstrapPollIntervalMs } from "./utils/requestScheduling.ts";
 import { useLanternPreview, useWrappedSeason } from "./hooks/useWrapped.ts";
@@ -62,6 +63,7 @@ const ArtistReleaseListPage = lazy(routeModules.artistReleases);
 const AlbumPage = lazy(routeModules.album);
 const ActivityPage = lazy(routeModules.activity);
 const PlaylistsPage = lazy(routeModules.playlists);
+const PlaylistBuilderPage = lazy(routeModules.playlistBuilder);
 const PlaylistDetailPage = lazy(routeModules.playlist);
 const FlowsPage = lazy(routeModules.flows);
 const FlowDetailPage = lazy(routeModules.flow);
@@ -327,6 +329,14 @@ const appRoutes = createRoutesFromElements(
           element={
             <PermissionRoute permission="accessPlaylists">
               <PlaylistsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path={playlistBuilderPath}
+          element={
+            <PermissionRoute permission="accessPlaylists">
+              <PlaylistBuilderPage />
             </PermissionRoute>
           }
         />

@@ -180,14 +180,18 @@ async function requestCover(
     token = session?.token,
     headers = {},
     kind = "albums",
+    cachedOnly = false,
   }: {
     token?: string | null;
     headers?: { authorization?: string };
     kind?: "albums" | "artists";
+    cachedOnly?: boolean;
   } = {},
 ) {
-  const query = token ? `?token=${encodeURIComponent(token)}` : "";
-  const response = await realFetch(`${baseUrl}/api/library/${kind}/${albumId}/cover${query}`, {
+  const query = new URLSearchParams();
+  if (token) query.set("token", token);
+  if (cachedOnly) query.set("cachedOnly", "1");
+  const response = await realFetch(`${baseUrl}/api/library/${kind}/${albumId}/cover?${query}`, {
     headers,
   });
   return {
@@ -508,9 +512,12 @@ describe("with sign-in required", () => {
     const album = await albumFixture("provider-art", [null], {
       metadata: { images: [{ remoteUrl: "https://images.example/provider-art.png" }] },
     });
+    assert.equal((await requestCover(album.id, { cachedOnly: true })).status, 404);
+    assert.deepEqual(requests, []);
     const first = await requestCover(album.id);
     assert.equal(first.status, 200);
     assert.equal(await isBlue(first.body), true);
+    assert.deepEqual((await requestCover(album.id, { cachedOnly: true })).body, first.body);
     assert.equal((await requestCover(album.id)).status, 200);
     assert.deepEqual(requests, ["https://images.example/provider-art.png"]);
   });

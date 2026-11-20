@@ -8,6 +8,7 @@ import {
   ListMusic,
   MoreVertical,
   Plus,
+  SlidersHorizontal,
   Upload,
 } from "../../components/icons";
 import { Select } from "../../components/Select";
@@ -30,7 +31,7 @@ import {
 } from "./playlistPageUtils";
 import { usePlaylistStatus } from "./usePlaylistStatus";
 import { useHiddenPlaylistTracks } from "../../contexts/PlaylistBulkActions.ts";
-import { playlistPath } from "../../navigation/playlistPaths";
+import { playlistBuilderPath, playlistPath } from "../../navigation/playlistPaths";
 import { getApiErrorMessage } from "../../utils/api/errors.ts";
 import { routeStateOf } from "../../navigation/routeState.ts";
 import { normalizeNameKey, reserveUniqueName } from "../../utils/staticPlaylists.ts";
@@ -245,6 +246,12 @@ export default function PlaylistsPage() {
               menuLabel="Create playlist"
               items={[
                 { id: "new", label: "New playlist", icon: ListMusic, onSelect: openCreate },
+                {
+                  id: "builder",
+                  label: "Playlist builder",
+                  icon: SlidersHorizontal,
+                  onSelect: () => navigate(playlistBuilderPath),
+                },
                 {
                   id: "import",
                   label: "Import playlist",

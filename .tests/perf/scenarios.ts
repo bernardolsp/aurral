@@ -22,11 +22,13 @@ const homeRails = ["plays", "random", "newest", "played", "released"].map((sort)
   }),
 );
 
+export type ScenarioRequest = string | { path: string; json: Record<string, unknown> };
+
 export type Scenario = {
   name: string;
   random?: true;
   writes?: true;
-  requests: (context: PerfContext) => string[];
+  requests: (context: PerfContext) => ScenarioRequest[];
 };
 
 const DISCOVER_ARTIST = "90000000-0000-4000-8000-000000000001";
@@ -168,6 +170,27 @@ export const scenarios: Scenario[] = [
   { name: "discover search", requests: () => ["/api/search?q=perf&scope=artist"] },
   { name: "similar artists", requests: () => [`/api/artists/${SIMILAR_ARTIST}/similar`] },
   { name: "playlists", requests: () => ["/api/playlists/status"] },
+  {
+    name: "playlist builder, Library",
+    requests: ({ artistId }) => {
+      const recipe = {
+        source: "library",
+        artist: {
+          name: `Perf Artist ${String(artistId - 1).padStart(5, "0")}`,
+          libraryArtistId: artistId,
+          mbid: null,
+        },
+      };
+      return [
+        "/api/playlists/builder/artists?source=library&q=Perf%20Artist%20000",
+        { path: "/api/playlists/builder/options", json: recipe },
+        {
+          path: "/api/playlists/builder/preview",
+          json: { ...recipe, seedTrackIds: [], similarArtists: [], size: 20 },
+        },
+      ];
+    },
+  },
   {
     name: "activity queue",
     requests: () => [

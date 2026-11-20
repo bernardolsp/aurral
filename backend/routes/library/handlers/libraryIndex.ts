@@ -44,7 +44,9 @@ async function sendLibraryArtwork(c: Context<AppEnv>, kind: LibraryArtworkKind, 
     c.header("Cache-Control", "private, max-age=300");
     return c.json({ error: "Artwork not found" }, 404);
   };
-  const artwork = await getLibraryArtwork(kind, id).catch(() => null);
+  const artwork = await getLibraryArtwork(kind, id, {
+    cachedOnly: c.req.query("cachedOnly") === "1",
+  }).catch(() => null);
   if (!artwork) return notFound();
   c.header(
     "Cache-Control",
