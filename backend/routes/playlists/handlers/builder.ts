@@ -23,6 +23,7 @@ const selection = { source: builderSource, artist: builderArtist, recommendation
 const preview = v.pipe(
   v.object({
     ...selection,
+    maxHops: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(3))),
     seedTrackIds: v.pipe(v.array(builderText), v.maxLength(5)),
     similarArtists: v.pipe(v.array(builderArtist), v.maxLength(5)),
     size: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),

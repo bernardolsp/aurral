@@ -36,10 +36,10 @@ test("Library recommendations keep local files playable and show cached discover
     similarArtists: [],
     size: 12,
   };
-  const build = async (recommendationMode: string) =>
+  const build = async (recommendationMode: string, maxHops?: number) =>
     v.parse(
       preview,
-      await api.post("/playlists/builder/preview", { ...recipe, recommendationMode }),
+      await api.post("/playlists/builder/preview", { ...recipe, recommendationMode, maxHops }),
     );
   const online = await build("online");
   assert.equal(online.tracks[0]?.id, seed.id);
@@ -65,4 +65,16 @@ test("Library recommendations keep local files playable and show cached discover
     online.discoveryTeaser.map((track) => track.id),
   );
   assert.ok(offline.tracks.every((track) => track.source === "library"));
+
+  const deep = await build("online", 3);
+  assert.equal(deep.tracks[0]?.id, seed.id);
+  assert.ok(deep.tracks.every((track) => track.source === "library"));
+  const deeperIds = (result: typeof deep) =>
+    result.tracks.filter((track) => (track.recommendationHop ?? 0) > 1).map((track) => track.id);
+  assert.ok(deeperIds(deep).length > 0);
+  const warmCalls = await recordingCalls();
+  assert.ok(warmCalls <= calls + 4);
+  const cached = await build("offline", 3);
+  assert.deepEqual(deeperIds(cached), deeperIds(deep));
+  assert.equal(await recordingCalls(), warmCalls);
 });

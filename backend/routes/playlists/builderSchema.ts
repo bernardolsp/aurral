@@ -16,6 +16,7 @@ export const builderTrack = v.object({
   albumName: v.nullable(builderText),
   source: builderSource,
   recordingMbid: v.optional(v.pipe(v.string(), v.uuid())),
+  recommendationHop: v.optional(v.picklist([1, 2, 3])),
   pickReason: v.optional(
     v.picklist(["seed", "recording", "chosenArtist", "relatedArtist", "genre"]),
   ),

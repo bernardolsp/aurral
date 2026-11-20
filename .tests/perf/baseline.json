@@ -4,7 +4,7 @@
       "cold": 13,
       "warm": 13
     },
-    "bytes": 1749,
+    "bytes": 1781,
     "scans": []
   },
   "library home": {
@@ -285,6 +285,20 @@
       },
       "labs.api.listenbrainz.org": {
         "cold": 1,
+        "warm": 0
+      }
+    }
+  },
+  "playlist builder, explore to three hops": {
+    "queries": {
+      "cold": 20,
+      "warm": 16
+    },
+    "bytes": 3495,
+    "scans": [],
+    "calls": {
+      "labs.api.listenbrainz.org": {
+        "cold": 2,
         "warm": 0
       }
     }

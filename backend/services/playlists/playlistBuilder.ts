@@ -170,7 +170,10 @@ const mbidsForSeeds = db.prepare<[string], { mbid: string }>(`
   JOIN library_tracks AS track ON track.id = media.track_id
   WHERE media.id IN (SELECT value FROM json_each(?)) AND track.mbid IS NOT NULL AND ${available}`);
 
-const catalogFiles = db.prepare<[string], BuilderTrack & { catalogId: string }>(`
+const catalogFiles = db.prepare<
+  [string],
+  BuilderTrack & { catalogId: string; artistMbid: string | null }
+>(`
   WITH candidates AS (
     SELECT json_extract(value, '$.id') AS id, json_extract(value, '$.recordingMbid') AS mbid,
       json_extract(value, '$.trackName') AS title, json_extract(value, '$.artistName') AS credit
@@ -183,7 +186,7 @@ const catalogFiles = db.prepare<[string], BuilderTrack & { catalogId: string }>(
     JOIN library_tracks AS track ON track.title = candidates.title COLLATE NOCASE
     WHERE track.mbid IS NULL OR candidates.mbid IS NULL
   ), files AS (
-    SELECT matches.id AS catalogId, ${trackFields},
+    SELECT matches.id AS catalogId, ${trackFields}, artist.mbid AS artistMbid,
       ROW_NUMBER() OVER (PARTITION BY matches.id ORDER BY matches.byName, media.id) AS preference
     FROM matches
     JOIN library_tracks AS track ON track.id = matches.trackId
@@ -192,7 +195,7 @@ const catalogFiles = db.prepare<[string], BuilderTrack & { catalogId: string }>(
     JOIN library_artists AS artist ON artist.id = album.artist_id
     WHERE ${available} AND (matches.byName = 0 OR COALESCE(track.artist_name, artist.name) = matches.credit COLLATE NOCASE)
   )
-  SELECT catalogId, id, artistName, trackName, albumName, source FROM files WHERE preference = 1`);
+  SELECT catalogId, id, artistName, trackName, albumName, source, artistMbid FROM files WHERE preference = 1`);
 
 function preferIndexedFiles(tracks: BuilderTrack[], blocked: Set<string>) {
   const catalog = tracks.filter((track) => track.source === "discovery");
@@ -201,9 +204,13 @@ function preferIndexedFiles(tracks: BuilderTrack[], blocked: Set<string>) {
       ({ catalogId, ...file }) => [catalogId, file],
     ),
   );
-  return tracks
-    .map((track) => files.get(track.id) ?? track)
-    .filter((track) => !matchesArtistKeys(track, blocked));
+  return tracks.flatMap((track) => {
+    const match = files.get(track.id);
+    if (matchesArtistKeys(track, blocked) || matchesArtistKeys(match, blocked)) return [];
+    if (!match) return [track];
+    const { artistMbid: _artistMbid, ...file } = match;
+    return [{ ...track, ...file }];
+  });
 }
 
 const tagged = (tracks: BuilderTrack[], pickReason: NonNullable<BuilderTrack["pickReason"]>) =>
@@ -220,41 +227,66 @@ async function recordingCandidates(
   seeds: BuilderTrack[],
   mode: RecommendationMode,
   blocked: Set<string>,
+  maxHops?: number,
 ) {
   const localSeedIds = seeds
     .filter((track) => track.source === "library")
     .map((track) => Number(track.id.slice("library:".length)));
-  const mbids = [
+  let frontier = [
     ...(localSeedIds.length
       ? mbidsForSeeds.all(JSON.stringify(localSeedIds)).map((row) => row.mbid)
       : []),
     ...seeds.map((track) => track.recordingMbid),
   ].flatMap((mbid) => normalizeMbid(mbid) ?? []);
-  const matches = (await rankedRecordings(mbids, mode)).filter(
-    (match) =>
-      !matchesArtistKeys(
-        { artistName: match.artist_credit_name, artistAliases: match.artist_credit_mbids ?? [] },
-        blocked,
-      ),
+  const seen = new Set(frontier);
+  const layers: BuilderTrack[][] = [];
+  for (const hop of [1, 2, 3] as const) {
+    if (!frontier.length || hop > (maxHops ?? 1)) break;
+    const matches = await rankedRecordings(frontier, mode);
+    const candidates: BuilderTrack[] = [];
+    for (const match of matches) {
+      const {
+        artist_credit_name: artistName,
+        recording_name: trackName,
+        recording_mbid: recordingMbid,
+      } = match;
+      if (seen.has(recordingMbid)) continue;
+      seen.add(recordingMbid);
+      if (matchesArtistKeys({ artistName, artistAliases: match.artist_credit_mbids }, blocked))
+        continue;
+      const albumName = match.release_name?.trim() || null;
+      candidates.push({
+        id: catalogId(artistName, trackName, albumName, recordingMbid),
+        artistName,
+        trackName,
+        albumName,
+        recordingMbid,
+        source: "discovery",
+        pickReason: "recording",
+        ...(maxHops !== undefined && { recommendationHop: hop }),
+      });
+    }
+    const tracks = preferIndexedFiles(candidates, blocked);
+    layers.push(tracks);
+    if (hop === (maxHops ?? 1)) break;
+    // At most two new requests per depth. Prefer different artists among the strongest matches.
+    const pool = tracks.slice(0, 12);
+    const diverse = uniqueBy(pool, (track) => track.artistName.toLowerCase());
+    frontier = [...new Set([...diverse, ...pool].map((track) => track.recordingMbid!))].slice(0, 2);
+  }
+  return layers;
+}
+
+function mixRecordingLayers(layers: BuilderTrack[][]) {
+  const [direct = [], ...deeper] = layers;
+  if (!deeper.length) return direct;
+  // Give direct matches the first slot and two out of each following three when available.
+  const further = interleaveLists(...deeper.reverse());
+  return interleaveLists(
+    direct.filter((_, i) => i % 2 === 0),
+    further,
+    direct.filter((_, i) => i % 2 === 1),
   );
-  const candidates: BuilderTrack[] = matches.map((match) => {
-    const {
-      artist_credit_name: artistName,
-      recording_name: trackName,
-      release_name,
-      recording_mbid: recordingMbid,
-    } = match;
-    const albumName = release_name?.trim() || null;
-    return {
-      id: catalogId(artistName, trackName, albumName, recordingMbid),
-      artistName,
-      trackName,
-      albumName,
-      recordingMbid,
-      source: "discovery",
-    };
-  });
-  return tagged(preferIndexedFiles(candidates, blocked), "recording");
 }
 async function recommendTracks({
   artists,
@@ -265,6 +297,7 @@ async function recommendTracks({
   size,
   blocked,
   missingArtists,
+  maxHops,
 }: {
   artists: BuilderArtist[];
   byArtist: BuilderTrack[][];
@@ -274,6 +307,7 @@ async function recommendTracks({
   size: number;
   blocked: Set<string>;
   missingArtists: string[];
+  maxHops?: number;
 }): Promise<BuilderPreview> {
   const anchor = artists[0]!;
   const chosen = byArtist.map((pool) => tagged(shuffle(pool), "chosenArtist"));
@@ -291,12 +325,10 @@ async function recommendTracks({
       discoveryTeaser: [],
       recommendationBasis: "artist",
     };
-  const recordingPicks = await recordingCandidates(seeds, mode, blocked);
+  const layers = await recordingCandidates(seeds, mode, blocked, maxHops);
   const eligible = (track: BuilderTrack) => source === "discovery" || track.source === "library";
-  const primary = uniqueBy(
-    [...reserved, ...recordingPicks.filter(eligible)],
-    buildCoreTrackIdentity,
-  );
+  const recordingPicks = mixRecordingLayers(layers.map((layer) => layer.filter(eligible)));
+  const primary = uniqueBy([...reserved, ...recordingPicks], buildCoreTrackIdentity);
   let related: BuilderTrack[] = [];
   let genre: BuilderTrack[] = [];
   if (primary.length < size) {
@@ -328,16 +360,17 @@ async function recommendTracks({
       );
     }
   }
-  const candidates = [
-    ...reserved,
-    ...recordingPicks,
-    ...interleaveLists(related, genre, interleaveLists(...chosen)),
-  ].filter((track) => !matchesArtistKeys(track, blocked));
-  const tracks = uniqueBy(candidates.filter(eligible), buildCoreTrackIdentity).slice(0, size);
+  const fallback = interleaveLists(related, genre, interleaveLists(...chosen)).filter(
+    (track) => !matchesArtistKeys(track, blocked),
+  );
+  const tracks = uniqueBy([...primary, ...fallback.filter(eligible)], buildCoreTrackIdentity).slice(
+    0,
+    size,
+  );
   const included = new Set(tracks.map(buildCoreTrackIdentity));
   const discoveryTeaser =
     source === "library"
-      ? uniqueBy(candidates, buildCoreTrackIdentity)
+      ? uniqueBy([...reserved, ...mixRecordingLayers(layers), ...fallback], buildCoreTrackIdentity)
           .slice(0, size)
           .filter(
             (track) => track.source === "discovery" && !included.has(buildCoreTrackIdentity(track)),
@@ -363,13 +396,19 @@ export async function previewBuilderPlaylist(
     similarArtists,
     seedTrackIds,
     size,
-    recommendationMode,
+    maxHops,
+    recommendationMode = maxHops === undefined
+      ? undefined
+      : source === "library"
+        ? "offline"
+        : "online",
   }: {
     source: BuilderSource;
     artist: BuilderArtist;
     similarArtists: BuilderArtist[];
     seedTrackIds: string[];
     size: number;
+    maxHops?: number;
     recommendationMode?: RecommendationMode;
   },
   userId: number,
@@ -394,6 +433,7 @@ export async function previewBuilderPlaylist(
       source,
       mode: recommendationMode,
       size,
+      maxHops,
       blocked,
       missingArtists,
     });

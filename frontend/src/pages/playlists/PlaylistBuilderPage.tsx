@@ -8,11 +8,12 @@ import type {
 import ArtistImage from "../../components/ArtistImage";
 import { asApiError, buildAuthenticatedApiUrl } from "../../utils/api/core.ts";
 import { DotLoader } from "../../components/DotLoader";
-import { Check, Compass, Library, ListMusic, Music, Plus, X } from "../../components/icons";
+import { Check, Compass, Info, Library, ListMusic, Music, Plus, X } from "../../components/icons";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { BuilderPreview } from "./BuilderPreview";
 import { useAuth } from "../../contexts/AuthContext";
 import PillToggle from "../../components/PillToggle";
+import TooltipButton from "../../components/TooltipButton";
 import {
   builderActionKey,
   fetchBuilderPreview,
@@ -30,6 +31,11 @@ import {
 import "./playlistBuilder.css";
 
 const MAX_PICKS = 5;
+const HOP_OPTIONS = [
+  { value: 1, label: "1 hop" },
+  { value: 2, label: "2 hops" },
+  { value: 3, label: "3 hops" },
+] as const;
 const SOURCES = [
   { value: "library", label: "My library", icon: Library },
   { value: "discovery", label: "Library + discovery", icon: Compass },
@@ -52,6 +58,10 @@ function BuilderRecipe({
 }) {
   const [selectedSeeds, setSelectedSeeds] = useState<string[]>([]);
   const [similarArtists, setSimilarArtists] = useState<BuilderArtist[]>([]);
+  const { bootstrap } = useAuth();
+  const exploreFurther = bootstrap?.api?.features?.includes("playlistBuilderExploreFurther");
+  const [maxHops, setMaxHops] = useState<(typeof HOP_OPTIONS)[number]["value"]>(1);
+  const [showHopHelp, setShowHopHelp] = useState(false);
   const [sizeInput, setSizeInput] = useState("20");
   const [filter, setFilter] = useState("");
   const options = useQuery({
@@ -81,6 +91,7 @@ function BuilderRecipe({
         similarArtists,
         size,
         recommendationMode,
+        ...(exploreFurther && { maxHops }),
       }),
     onError: async (error) => {
       if (asApiError(error)?.response?.status !== 409) return;
@@ -249,6 +260,49 @@ function BuilderRecipe({
           </p>
         )}
       </div>
+      {exploreFurther && (
+        <details className="builder-advanced">
+          <summary>Advanced</summary>
+          <div className="builder-field">
+            <div className="builder-chips">
+              <span className="artist-field-label" id="builder-max-hops">
+                Max hops
+              </span>
+              <TooltipButton
+                className="btn btn-ghost btn-icon"
+                label="About max hops"
+                aria-expanded={showHopHelp}
+                aria-controls="builder-max-hops-help"
+                onClick={() => setShowHopHelp((open) => !open)}
+              >
+                <Info aria-hidden="true" />
+              </TooltipButton>
+            </div>
+            <p id="builder-max-hops-help" className="builder-hint" hidden={!showHopHelp}>
+              One hop checks for songs like your seed songs. Two hops also check for songs like
+              those matches. Three hops follow those matches one step further.
+            </p>
+            <div className="artist-segmented" role="radiogroup" aria-labelledby="builder-max-hops">
+              {HOP_OPTIONS.map(({ value, label }) => (
+                <label
+                  key={value}
+                  className={`artist-segmented-button${maxHops === value ? " is-active" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    className="artist-checkbox"
+                    name="builder-max-hops"
+                    value={value}
+                    checked={maxHops === value}
+                    onChange={() => setMaxHops(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </details>
+      )}
       {preview.error && (
         <p className="artist-error-text" role="alert">
           {getApiErrorMessage(preview.error, "Couldn't build playlist preview")}

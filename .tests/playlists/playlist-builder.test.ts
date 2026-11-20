@@ -400,3 +400,151 @@ test("cold offline recipes use local genres, and warm offline recipes keep catal
   assert.equal(warm?.tracks[0]?.id, selected.id);
   assert.equal(top.mock.calls.length + similar.mock.calls.length + search.mock.calls.length, 0);
 });
+
+test("exploration follows bounded, diverse paths across unowned songs with cache-only replay", async () => {
+  const clients = await import("../../backend/services/apiClients/index.ts");
+  const { addDiscoveryFeedback } = await import("../../backend/services/discovery/feedback.ts");
+  const userId = 414;
+  const mbid = (n: number) => `abca0000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const anchor = await addArtist("Hop anchor", ["Start"]);
+  const ownedArtist = "Hop Library";
+  const title = (n: number) => `Graph song ${n}`;
+  await addArtist(ownedArtist, [6, 7, 8, 10, 11, 12].map(title));
+  await addArtist("Hidden library credit", [title(15)]);
+  const tag = db.prepare("UPDATE library_tracks SET mbid = ? WHERE artist_name = ? AND title = ?");
+  tag.run(mbid(1), anchor.name, "Start");
+  tag.run(mbid(15), "Hidden library credit", title(15));
+  for (const n of [6, 7, 8, 10, 11, 12]) tag.run(mbid(n), ownedArtist, title(n));
+  addDiscoveryFeedback(String(userId), { action: "block_artist", artistId: mbid(490) });
+  addDiscoveryFeedback(String(userId), {
+    action: "block_artist",
+    artistName: "Hidden library credit",
+  });
+
+  const edges = new Map<number, number[]>([
+    [1, [2, 15, 3, 4, 5, 6, 7, 8]],
+    [3, [1, 5, 9, 10]],
+    [5, [1, 3, 9, 11]],
+    [9, [12, 2, 3, 16]],
+    [10, [12, 9, 14]],
+  ]);
+  const credits: Record<number, string> = {
+    3: "Bridge A",
+    4: "Bridge A",
+    5: "Bridge B",
+    9: "Bridge C",
+  };
+  const calls: number[] = [];
+  const remote = vi
+    .spyOn(clients, "listenbrainzRequest")
+    .mockImplementation(async (_route, query) => {
+      assert.ok(query && "recording_mbids" in query);
+      const from = Number(String(query.recording_mbids).slice(-12));
+      calls.push(from);
+      return (edges.get(from) ?? []).map((n, index) => ({
+        reference_mbid: mbid(from),
+        recording_mbid: mbid(n),
+        recording_name: title(n),
+        artist_credit_name: credits[n] ?? "Other catalogue credit",
+        artist_credit_mbids: n === 2 ? [mbid(490)] : null,
+        release_name: null,
+        score: 100 - index,
+      }));
+    });
+  const related = vi.spyOn(metadata, "getSimilarArtists").mockResolvedValue([]);
+  const top = vi.spyOn(metadata, "getArtistTopTracks").mockResolvedValue([]);
+  const { tracks } = await builder.builderOptions(anchor, "library", userId, "offline");
+  const recipe = {
+    source: "library" as const,
+    artist: anchor,
+    seedTrackIds: [tracks[0]!.id],
+    similarArtists: [],
+    size: 3,
+  };
+  // A Library recipe with explicit depth also defaults to offline when the caller omits its mode.
+  const cold = await builder.previewBuilderPlaylist({ ...recipe, maxHops: 3 }, userId);
+  assert.ok(cold);
+  assert.ok(cold.tracks.every((track) => track.pickReason !== "recording"));
+  assert.equal(remote.mock.calls.length + related.mock.calls.length + top.mock.calls.length, 0);
+
+  const one = await builder.previewBuilderPlaylist(
+    { ...recipe, recommendationMode: "online" },
+    userId,
+  );
+  assert.deepEqual(calls, [1]);
+  assert.deepEqual(
+    one?.tracks.map((t) => t.trackName),
+    ["Start", title(6), title(7)],
+  );
+  const two = await builder.previewBuilderPlaylist(
+    { ...recipe, recommendationMode: "online", maxHops: 2 },
+    userId,
+  );
+  assert.deepEqual(calls, [1, 3, 5]);
+  assert.deepEqual(
+    two?.tracks.map((t) => [t.trackName, t.recommendationHop]),
+    [
+      ["Start", undefined],
+      [title(6), 1],
+      [title(10), 2],
+    ],
+  );
+  const three = await builder.previewBuilderPlaylist(
+    { ...recipe, recommendationMode: "online", maxHops: 3 },
+    userId,
+  );
+  assert.deepEqual(calls, [1, 3, 5, 9, 10]);
+  assert.ok(three);
+  assert.deepEqual(
+    three.tracks.map((t) => [t.trackName, t.recommendationHop]),
+    [
+      ["Start", undefined],
+      [title(6), 1],
+      [title(12), 3],
+    ],
+  );
+  assert.ok(three.tracks.every((t) => t.source === "library"));
+  assert.deepEqual(
+    three.discoveryTeaser?.map((t) => t.trackName),
+    [title(3)],
+  );
+
+  const warm = await builder.previewBuilderPlaylist(
+    { ...recipe, recommendationMode: "offline", maxHops: 3 },
+    userId,
+  );
+  assert.deepEqual(warm, three);
+  const expanded = await builder.previewBuilderPlaylist(
+    { ...recipe, source: "discovery", recommendationMode: "offline", maxHops: 3, size: 40 },
+    userId,
+  );
+  const recordings = expanded?.tracks.filter((t) => t.pickReason === "recording") ?? [];
+  assert.ok(recordings.some((t) => t.trackName === title(3) && t.recommendationHop === 1));
+  assert.ok(recordings.some((t) => t.trackName === title(12) && t.recommendationHop === 3));
+  assert.ok(recordings.every((t) => ![1, 2, 15].some((n) => t.recordingMbid === mbid(n))));
+  assert.equal(new Set(recordings.map((t) => t.recordingMbid)).size, recordings.length);
+  assert.deepEqual(calls, [1, 3, 5, 9, 10]);
+  assert.equal(related.mock.calls.length + top.mock.calls.length, 0);
+});
+
+test("preview validates the exploration depth before looking up recordings", async () => {
+  const reader = signedInAs(testUser(1, { permissions: { accessPlaylists: true } })).route(
+    "/",
+    routes.default,
+  );
+  for (const maxHops of [0, 4, 1.5, "2"]) {
+    const response = await reader.request("/playlists/builder/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "library",
+        artist: main,
+        seedTrackIds: [],
+        similarArtists: [],
+        size: 3,
+        maxHops,
+      }),
+    });
+    assert.equal(response.status, 400);
+  }
+});

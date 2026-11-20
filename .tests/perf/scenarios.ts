@@ -193,8 +193,11 @@ export const scenarios: Scenario[] = [
       ];
     },
   },
-  {
-    name: "playlist builder, online recommendations for Library",
+  ...[1, 3].map((maxHops): Scenario => ({
+    name:
+      maxHops === 1
+        ? "playlist builder, online recommendations for Library"
+        : "playlist builder, explore to three hops",
     requests: ({ artistId, builderSeedId }) => [
       {
         path: "/api/playlists/builder/preview",
@@ -206,13 +209,14 @@ export const scenarios: Scenario[] = [
           },
           source: "library",
           recommendationMode: "online",
+          ...(maxHops > 1 && { maxHops }),
           seedTrackIds: [builderSeedId],
           similarArtists: [],
           size: 20,
         },
       },
     ],
-  },
+  })),
   {
     name: "activity queue",
     requests: () => [

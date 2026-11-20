@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import type { BuilderTrack } from "../../../../backend/routes/playlists/builderSchema.ts";
 import { useMutation } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 import { Compass, ListMusic, Pencil, Plus } from "../../components/icons";
@@ -25,6 +26,12 @@ const REASONS = {
   relatedArtist: "Related artist",
   genre: "Shared genre",
 };
+
+function pickReason(track: BuilderTrack) {
+  if (track.pickReason === "recording" && track.recommendationHop && track.recommendationHop > 1)
+    return `${track.recommendationHop} hops from a seed song`;
+  return track.pickReason && REASONS[track.pickReason];
+}
 
 export function BuilderPreview({
   review,
@@ -116,6 +123,9 @@ export function BuilderPreview({
               {discoveries.map((track) => (
                 <li key={track.id}>
                   <strong>{track.trackName}</strong> · {track.artistName}
+                  {track.recommendationHop &&
+                    track.recommendationHop > 1 &&
+                    ` · ${pickReason(track)}`}
                 </li>
               ))}
             </ul>
@@ -241,7 +251,7 @@ export function BuilderPreview({
                     <strong>{track.trackName}</strong>
                     <small>
                       {track.artistName}
-                      {track.pickReason && ` · ${REASONS[track.pickReason]}`}
+                      {track.pickReason && ` · ${pickReason(track)}`}
                     </small>
                   </span>
                   {source === "discovery" && (

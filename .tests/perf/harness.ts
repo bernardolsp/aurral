@@ -130,19 +130,21 @@ function fakeListenbrainz() {
       return realFetch(input, init);
     }
     calls.set(url.host, (calls.get(url.host) ?? 0) + 1);
-    const answer =
-      url.pathname === "/similar-recordings/json"
-        ? [
-            {
-              recording_mbid: "40000000-0000-4000-8000-000000000001",
-              recording_name: "Perf Track 0000001",
-              artist_credit_name: "Perf Artist 00000",
-              release_name: "Perf Album 000000",
-              reference_mbid: url.searchParams.get("recording_mbids"),
-              score: 100,
-            },
-          ]
-        : FAKE_ANSWERS.get(url.pathname.replace(/\/$/, ""));
+    if (url.pathname === "/similar-recordings/json") {
+      const seed = url.searchParams.get("recording_mbids");
+      const next = seed === "40000000-0000-4000-8000-000000000001" ? 2 : 1;
+      return Response.json([
+        {
+          recording_mbid: `40000000-0000-4000-8000-${String(next).padStart(12, "0")}`,
+          recording_name: `Perf Track ${String(next).padStart(7, "0")}`,
+          artist_credit_name: "Perf Artist 00000",
+          release_name: "Perf Album 000000",
+          reference_mbid: seed,
+          score: 100,
+        },
+      ]);
+    }
+    const answer = FAKE_ANSWERS.get(url.pathname.replace(/\/$/, ""));
     return Response.json(answer ?? { error: "Not found" }, { status: answer ? 200 : 404 });
   };
   return {
