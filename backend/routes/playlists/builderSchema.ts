@@ -2,6 +2,8 @@ import * as v from "valibot";
 
 export const builderText = v.pipe(v.string(), v.trim(), v.nonEmpty(), v.maxLength(500));
 export const builderSource = v.picklist(["library", "discovery"]);
+export const recommendationMode = v.picklist(["offline", "online"]);
+export type RecommendationMode = v.InferOutput<typeof recommendationMode>;
 export const builderArtist = v.object({
   name: builderText,
   mbid: v.nullable(v.pipe(v.string(), v.uuid())),
@@ -13,6 +15,10 @@ export const builderTrack = v.object({
   trackName: builderText,
   albumName: v.nullable(builderText),
   source: builderSource,
+  recordingMbid: v.optional(v.pipe(v.string(), v.uuid())),
+  pickReason: v.optional(
+    v.picklist(["seed", "recording", "chosenArtist", "relatedArtist", "genre"]),
+  ),
 });
 
 export type BuilderArtist = v.InferOutput<typeof builderArtist>;

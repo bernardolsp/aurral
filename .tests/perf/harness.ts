@@ -130,7 +130,19 @@ function fakeListenbrainz() {
       return realFetch(input, init);
     }
     calls.set(url.host, (calls.get(url.host) ?? 0) + 1);
-    const answer = FAKE_ANSWERS.get(url.pathname.replace(/\/$/, ""));
+    const answer =
+      url.pathname === "/similar-recordings/json"
+        ? [
+            {
+              recording_mbid: "40000000-0000-4000-8000-000000000001",
+              recording_name: "Perf Track 0000001",
+              artist_credit_name: "Perf Artist 00000",
+              release_name: "Perf Album 000000",
+              reference_mbid: url.searchParams.get("recording_mbids"),
+              score: 100,
+            },
+          ]
+        : FAKE_ANSWERS.get(url.pathname.replace(/\/$/, ""));
     return Response.json(answer ?? { error: "Not found" }, { status: answer ? 200 : 404 });
   };
   return {
@@ -236,8 +248,20 @@ export async function startPerfApp({ artists }: { artists: number }) {
   const server: Server = await listen(app);
   const baseUrl = `http://127.0.0.1:${listeningAddress(server).port}`;
   const statements = recordStatements(db);
+  const artistId = Math.floor(artists / 2) + 1;
+  const seed = db
+    .prepare<[number], { id: number }>(`
+    SELECT m.id FROM library_media_files m
+    JOIN library_albums a ON a.id = m.album_id
+    JOIN library_tracks t ON t.id = m.track_id
+    WHERE a.artist_id = ? AND m.available = 1 AND t.artist_name = a.album_artist
+    ORDER BY t.title LIMIT 1
+  `)
+    .get(artistId);
+  if (!seed) throw new Error("Missing Playlist Builder seed in performance library");
   const context: PerfContext = {
-    artistId: Math.floor(artists / 2) + 1,
+    artistId,
+    builderSeedId: `library:${seed.id}`,
     albumId: library.albumIds[Math.floor(library.albumIds.length / 2)]!,
     trackId: library.trackRows
       .slice(Math.floor(library.trackRows.length / 2))

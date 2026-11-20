@@ -8,7 +8,10 @@ import type {
 import { Plus, Search, User } from "../../components/icons";
 import { SkeletonStatus, SkeletonText } from "../../components/Skeletons";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { playlistBuilderClient } from "../../utils/api/clients/playlistBuilder.ts";
+import {
+  playlistBuilderClient,
+  type BuilderRecommendationMode,
+} from "../../utils/api/clients/playlistBuilder.ts";
 import { getApiErrorMessage } from "../../utils/api/errors.ts";
 
 export const artistKey = (artist: BuilderArtist) =>
@@ -48,11 +51,13 @@ export function BuilderLoading({ label }: { label: string }) {
 export function BuilderArtistSearch({
   label,
   source,
+  recommendationMode,
   exclude,
   onPick,
 }: {
   label: string;
   source: BuilderSource;
+  recommendationMode: BuilderRecommendationMode;
   exclude: BuilderArtist[];
   onPick: (artist: BuilderArtist) => void;
 }) {
@@ -61,11 +66,14 @@ export function BuilderArtistSearch({
   const term = input.trim();
   const q = useDebouncedValue(term, 300);
   const query = useQuery({
-    queryKey: ["playlist-builder", "artists", source, q],
+    queryKey: ["playlist-builder", "artists", source, recommendationMode, q],
     enabled: q.length > 0 && q === term,
     queryFn: ({ signal }) =>
       parseResponse(
-        playlistBuilderClient.artists.$get({ query: { q, source } }, { init: { signal } }),
+        playlistBuilderClient.artists.$get(
+          { query: { q, source, recommendationMode } },
+          { init: { signal } },
+        ),
       ),
   });
   const options = query.data?.artists.filter(

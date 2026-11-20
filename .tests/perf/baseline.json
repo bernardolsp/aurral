@@ -265,11 +265,29 @@
   },
   "playlist builder, Library": {
     "queries": {
-      "cold": 16,
-      "warm": 16
+      "cold": 23,
+      "warm": 23
     },
-    "bytes": 17317,
+    "bytes": 17847,
     "scans": []
+  },
+  "playlist builder, online recommendations for Library": {
+    "queries": {
+      "cold": 24,
+      "warm": 14
+    },
+    "bytes": 3347,
+    "scans": [],
+    "calls": {
+      "brainzmash": {
+        "cold": 1,
+        "warm": 0
+      },
+      "labs.api.listenbrainz.org": {
+        "cold": 1,
+        "warm": 0
+      }
+    }
   },
   "activity queue": {
     "queries": {

@@ -471,15 +471,15 @@ function afterTracksLinked(
     reusedJobIds,
   }: Pick<Awaited<ReturnType<typeof linkTracksToLibrary>>, "queuedJobIds" | "reusedJobIds">,
   reason: string,
-  libraryOnly = false,
+  offlineMetadata = false,
 ) {
   playlistManager.requestPlaylistSync([playlistId]);
-  if (!libraryOnly && reusedJobIds.length > 0) playlistManager.scheduleScanLibrary();
+  if (!offlineMetadata && reusedJobIds.length > 0) playlistManager.scheduleScanLibrary();
   recordPlaylistHistory(playlistId, {
     tracksQueued: queuedJobIds.length,
     tracksReused: reusedJobIds.length,
   });
-  if (!libraryOnly) schedulePlaylistMbidEnrichment(playlistId, { reason, priority: 5 });
+  if (!offlineMetadata) schedulePlaylistMbidEnrichment(playlistId, { reason, priority: 5 });
 }
 
 async function createStaticPlaylist({
@@ -494,6 +494,7 @@ async function createStaticPlaylist({
   description = null,
   downloadMissing = true,
   libraryOnly = false,
+  offlineMetadata = libraryOnly,
 }: OperationPayload = {}) {
   const safePlaylistId = String(playlistId || "").trim() || randomUUID();
   const existing = flowPlaylistConfig.getStaticPlaylist(safePlaylistId);
@@ -532,7 +533,7 @@ async function createStaticPlaylist({
     await discardLibraryJobs(linked.createdJobIds);
     throw error;
   }
-  if (libraryOnly) {
+  if (offlineMetadata) {
     setPlaylistArtworkState(safePlaylistId, {
       mode: "simple",
       artistKey: null,
@@ -543,7 +544,7 @@ async function createStaticPlaylist({
   }
   await playlistManager.ensurePlaylistArtwork(safePlaylistId);
   if (linked.tracks.length > 0)
-    afterTracksLinked(safePlaylistId, linked, "static-playlist-create", libraryOnly === true);
+    afterTracksLinked(safePlaylistId, linked, "static-playlist-create", offlineMetadata === true);
   else playlistManager.requestPlaylistSync([safePlaylistId]);
   return {
     success: true,

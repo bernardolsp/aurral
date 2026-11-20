@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import * as v from "valibot";
-import { builderArtist, builderSource, builderText, builderTrack } from "../builderSchema.ts";
+import {
+  builderArtist,
+  builderSource,
+  builderText,
+  builderTrack,
+  recommendationMode,
+} from "../builderSchema.ts";
 import { validate } from "../../../middleware/validate.ts";
 import { requireUserAccount } from "../../../middleware/guards.ts";
 import type { AppEnv } from "../../../middleware/requestUser.ts";
@@ -12,7 +18,8 @@ import {
 } from "../../../services/playlists/playlistBuilder.ts";
 import { requirePlaylistAccess } from "./utils.ts";
 
-const selection = { source: builderSource, artist: builderArtist };
+const mode = v.optional(recommendationMode);
+const selection = { source: builderSource, artist: builderArtist, recommendationMode: mode };
 const preview = v.pipe(
   v.object({
     ...selection,
@@ -36,18 +43,29 @@ export default new Hono<AppEnv>()
   .get(
     "/artists",
     requirePlaylistAccess,
-    validate("query", v.object({ q: builderText, source: builderSource })),
+    validate(
+      "query",
+      v.object({ q: builderText, source: builderSource, recommendationMode: mode }),
+    ),
     async (c) => {
-      const { q, source } = c.req.valid("query");
+      const { q, source, recommendationMode } = c.req.valid("query");
       return c.json(
-        { artists: await findBuilderArtists(q, source, c.var.user.id, c.req.raw.signal) },
+        {
+          artists: await findBuilderArtists(
+            q,
+            source,
+            c.var.user.id,
+            c.req.raw.signal,
+            recommendationMode,
+          ),
+        },
         200,
       );
     },
   )
   .post("/options", requirePlaylistAccess, validate("json", v.object(selection)), async (c) => {
-    const { source, artist } = c.req.valid("json");
-    return c.json(await builderOptions(artist, source, c.var.user.id), 200);
+    const { source, artist, recommendationMode } = c.req.valid("json");
+    return c.json(await builderOptions(artist, source, c.var.user.id, recommendationMode), 200);
   })
   .post("/preview", requirePlaylistAccess, validate("json", preview), async (c) => {
     const result = await previewBuilderPlaylist(c.req.valid("json"), c.var.user.id);
@@ -66,6 +84,7 @@ export default new Hono<AppEnv>()
       "json",
       v.object({
         source: builderSource,
+        recommendationMode: mode,
         name: builderText,
         tracks: v.pipe(v.array(builderTrack), v.minLength(1), v.maxLength(100)),
       }),

@@ -145,6 +145,7 @@ export function indexMusic(catalogue: Catalogue) {
     artistByName: new Map(artists.map((artist) => [searchKey(artist.name), artist])),
     albumById: new Map(allAlbums.map((album) => [album.id, album])),
     albumByNumber: new Map(allAlbums.map((album) => [album.number, album])),
+    trackById: new Map(allTracks.map((track) => [track.id, track])),
     trackByNumber: new Map(allTracks.map((track) => [track.number, track])),
     releaseCredits,
     // One well-known track per album, best-known albums first.

@@ -220,3 +220,183 @@ test("Playlist Builder rejects unauthorized access and invalid recipe sizes", as
     400,
   );
 });
+
+test("recording recommendations reserve chosen artists, rank agreement between seeds, and compare the available Library with Discovery", async () => {
+  const clients = await import("../../backend/services/apiClients/index.ts");
+  const mbid = (n: number) => `0b4a0000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const anchor = await addArtist("Dual seed", ["One", "Two"]);
+  await addArtist("Low tide", ["Shared", "Single", "Missing"]);
+  db.prepare("UPDATE library_tracks SET mbid = ? WHERE artist_name = ? AND title = ?").run(
+    mbid(1),
+    anchor.name,
+    "One",
+  );
+  db.prepare("UPDATE library_tracks SET mbid = ? WHERE artist_name = ? AND title = ?").run(
+    mbid(2),
+    anchor.name,
+    "Two",
+  );
+  db.prepare(
+    "UPDATE library_tracks SET mbid = ? WHERE artist_name = 'Low tide' AND title = 'Shared'",
+  ).run(mbid(3));
+  const row = (reference: string, id: number, title: string, score: number) => ({
+    reference_mbid: reference,
+    recording_mbid: mbid(id),
+    recording_name: title,
+    artist_credit_name: "Low tide",
+    artist_credit_mbids: null,
+    release_name: "Low tide",
+    score,
+  });
+  const remote = vi
+    .spyOn(clients, "listenbrainzRequest")
+    .mockImplementation(async (route, query) => {
+      assert.equal(route, "/similar-recordings/json");
+      assert.deepEqual(Object.keys(query ?? {}).sort(), ["algorithm", "recording_mbids"]);
+      assert.ok(query && "recording_mbids" in query);
+      const from = String(query.recording_mbids);
+      assert.ok(from === mbid(1) || from === mbid(2));
+      return from === mbid(1)
+        ? [
+            row(from, 4, "Single", 500),
+            row(from, 3, "Provider title for Shared", 100),
+            row(from, 5, "Missing", 50),
+            row(mbid(7), 9, "Wrong seed", 1000),
+          ]
+        : [row(from, 3, "Provider title for Shared", 50), row(from, 5, "Missing", 40)];
+    });
+  const top = vi.spyOn(metadata, "getArtistTopTracks").mockResolvedValue([]);
+  const similar = vi.spyOn(metadata, "getSimilarArtists").mockResolvedValue([]);
+  const { tracks: options } = await builder.builderOptions(anchor, "library", 1, "online");
+  const recipe = {
+    artist: anchor,
+    similarArtists: [other],
+    seedTrackIds: options.map((track) => track.id),
+    size: 5,
+  };
+  const preview = await builder.previewBuilderPlaylist(
+    { ...recipe, source: "library", recommendationMode: "online" },
+    1,
+  );
+  assert.deepEqual(
+    preview?.tracks.map(({ trackName, pickReason }) => [trackName, pickReason]),
+    [
+      ["One", "seed"],
+      ["Two", "seed"],
+      ["Rise", "chosenArtist"],
+      ["Shared", "recording"],
+      ["Single", "recording"],
+    ],
+  );
+  assert.ok(preview?.tracks.every((track) => track.source === "library"));
+  assert.deepEqual(
+    preview.discoveryTeaser?.map((track) => track.trackName),
+    ["Missing"],
+  );
+  assert.equal(preview.recommendationBasis, "recording");
+  assert.equal(remote.mock.calls.length, 2);
+
+  remote.mockClear();
+  const locked = await builder.previewBuilderPlaylist(
+    {
+      ...recipe,
+      source: "library",
+      recommendationMode: "online",
+      size: 1,
+      seedTrackIds: [recipe.seedTrackIds[0]!],
+      similarArtists: [],
+    },
+    1,
+  );
+  assert.deepEqual(locked?.discoveryTeaser, []);
+  assert.deepEqual(
+    locked?.tracks.map((track) => track.trackName),
+    ["One"],
+  );
+  assert.equal(remote.mock.calls.length, 0);
+  const expanded = await builder.previewBuilderPlaylist(
+    { ...recipe, source: "discovery", recommendationMode: "offline" },
+    1,
+  );
+  assert.deepEqual(
+    expanded?.tracks.map((track) => track.trackName),
+    ["One", "Two", "Rise", "Shared", "Missing"],
+  );
+  assert.equal(remote.mock.calls.length + top.mock.calls.length + similar.mock.calls.length, 0);
+  assert.ok(expanded);
+  const queued = vi.spyOn(playlistOperationQueue, "enqueuePayload");
+  const saved = await builder.saveBuilderPlaylist(
+    {
+      name: "Expanded cached mix",
+      source: "discovery",
+      recommendationMode: "offline",
+      tracks: expanded.tracks,
+    },
+    1,
+  );
+  assert.ok(saved);
+  const operation = queued.mock.calls[0]?.[0];
+  assert.ok(operation);
+  assert.equal(operation.downloadMissing, false);
+  await operations.processPlaylistOperation(operation);
+  const savedPlaylist = flowPlaylistConfig.getStaticPlaylist(saved.playlistId);
+  assert.equal(savedPlaylist?.tracks.at(-1)?.trackMbid, mbid(5));
+  assert.equal(artwork.getPlaylistArtworkState(saved.playlistId)?.mode, "simple");
+  assert.equal(remote.mock.calls.length + top.mock.calls.length + similar.mock.calls.length, 0);
+});
+
+test("cold offline recipes use local genres, and warm offline recipes keep catalog seeds without provider lookups", async () => {
+  const search = vi.spyOn(catalog, "searchArtists");
+  const top = vi.spyOn(metadata, "getArtistTopTracks").mockResolvedValue([
+    {
+      name: "Afterglow",
+      artistName: main.name,
+      albumName: "Night",
+      mbid: null,
+      durationMs: null,
+      popularity: 1,
+      previewUrl: null,
+      artworkUrl: null,
+      deezerAlbumId: null,
+    },
+  ]);
+  const similar = vi.spyOn(metadata, "getSimilarArtists").mockResolvedValue([]);
+  assert.deepEqual(
+    await builder.findBuilderArtists("Violet", "discovery", 1, undefined, "offline"),
+    [main],
+  );
+  const cold = await builder.previewBuilderPlaylist(
+    {
+      source: "library",
+      recommendationMode: "offline",
+      artist: main,
+      similarArtists: [],
+      seedTrackIds: [],
+      size: 5,
+    },
+    1,
+  );
+  assert.ok(cold);
+  assert.ok(cold.tracks.some((track) => track.pickReason === "genre"));
+  assert.deepEqual(cold.discoveryTeaser, []);
+  assert.equal(top.mock.calls.length + similar.mock.calls.length + search.mock.calls.length, 0);
+
+  const { tracks } = await builder.builderOptions(main, "discovery", 1, "online");
+  const selected = tracks.find((track) => track.trackName === "Afterglow");
+  assert.ok(selected);
+  top.mockClear();
+  similar.mockClear();
+  const warm = await builder.previewBuilderPlaylist(
+    {
+      source: "discovery",
+      recommendationMode: "offline",
+      artist: main,
+      similarArtists: [],
+      seedTrackIds: [selected.id],
+      size: 1,
+    },
+    1,
+  );
+  assert.equal(warm?.tracks[0]?.id, selected.id);
+  assert.equal(top.mock.calls.length + similar.mock.calls.length + search.mock.calls.length, 0);
+});

@@ -2,6 +2,7 @@ import { allReleaseTypes } from "../../frontend/src/pages/ArtistDetails/constant
 
 export type PerfContext = {
   artistId: number;
+  builderSeedId: string;
   albumId: number;
   trackId: number;
   lastAlbumPage: number;
@@ -172,9 +173,10 @@ export const scenarios: Scenario[] = [
   { name: "playlists", requests: () => ["/api/playlists/status"] },
   {
     name: "playlist builder, Library",
-    requests: ({ artistId }) => {
+    requests: ({ artistId, builderSeedId }) => {
       const recipe = {
         source: "library",
+        recommendationMode: "offline",
         artist: {
           name: `Perf Artist ${String(artistId - 1).padStart(5, "0")}`,
           libraryArtistId: artistId,
@@ -182,14 +184,34 @@ export const scenarios: Scenario[] = [
         },
       };
       return [
-        "/api/playlists/builder/artists?source=library&q=Perf%20Artist%20000",
+        "/api/playlists/builder/artists?source=library&recommendationMode=offline&q=Perf%20Artist%20000",
         { path: "/api/playlists/builder/options", json: recipe },
         {
           path: "/api/playlists/builder/preview",
-          json: { ...recipe, seedTrackIds: [], similarArtists: [], size: 20 },
+          json: { ...recipe, seedTrackIds: [builderSeedId], similarArtists: [], size: 20 },
         },
       ];
     },
+  },
+  {
+    name: "playlist builder, online recommendations for Library",
+    requests: ({ artistId, builderSeedId }) => [
+      {
+        path: "/api/playlists/builder/preview",
+        json: {
+          artist: {
+            name: `Perf Artist ${String(artistId - 1).padStart(5, "0")}`,
+            libraryArtistId: artistId,
+            mbid: null,
+          },
+          source: "library",
+          recommendationMode: "online",
+          seedTrackIds: [builderSeedId],
+          similarArtists: [],
+          size: 20,
+        },
+      },
+    ],
   },
   {
     name: "activity queue",

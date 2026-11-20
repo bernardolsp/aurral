@@ -95,6 +95,22 @@ test("the outside stand-ins answer in the shapes Aurral's clients read", async (
   assert.equal(top.length, 6);
   assert.ok(top.every((track) => track.artist?.name === "Radiohead" && (track.duration ?? 0) > 0));
   assert.ok(top.every((track) => track.preview?.endsWith(`/deezer/preview/${track.id}.mp3`)));
+  const seed = music.trackByNumber.get(Number(top[0]?.id));
+  assert.ok(seed);
+  const matches = v.parse(
+    v.array(
+      v.object({ recording_mbid: v.string(), reference_mbid: v.string(), score: v.number() }),
+    ),
+    ask(
+      `https://labs.api.listenbrainz.org/similar-recordings/json?recording_mbids=${seed.id}&algorithm=session_based`,
+    ),
+  );
+  assert.ok(matches.length > 0);
+  assert.ok(
+    matches.every(
+      (row) => row.reference_mbid === seed.id && music.trackById.has(row.recording_mbid),
+    ),
+  );
   const { format } = await parseBuffer(previewClip, "audio/mpeg");
   assert.equal(Math.round(format.duration ?? 0), 30);
 

@@ -57,6 +57,26 @@ export const listenbrainz: Outside = {
   respond({ url, method, body }, music) {
     const path = url.pathname.replace(/\/$/, "");
     const param = (name: string) => url.searchParams.get(name);
+    if (path === "/similar-recordings/json") {
+      const seed = music.trackById.get(param("recording_mbids") ?? "");
+      if (!seed || !param("algorithm")) return [];
+      return music.related(seed.artist).flatMap((artist, index) => {
+        const album = artist.albums[0];
+        const track = album?.tracks[(seed.position - 1) % album.tracks.length];
+        return track
+          ? [
+              {
+                reference_mbid: seed.id,
+                recording_mbid: track.id,
+                recording_name: track.title,
+                artist_credit_name: artist.name,
+                release_name: track.album.title,
+                score: 100 - index,
+              },
+            ]
+          : [];
+      });
+    }
     if (path === "/similar-artists/json") {
       const artist = music.artistById.get(mbids(param("artist_mbids"))[0] ?? "");
       return (artist ? music.related(artist) : []).map((entry, index) => ({

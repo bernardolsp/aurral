@@ -248,3 +248,50 @@ button.builder-row:disabled {
 .builder-row--preview:has(:not(:checked)[type="checkbox"]) .builder-row__copy {
   color: var(--aurral-text-subtle);
 }
+
+.builder-mode,
+.builder-discoveries {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.builder-mode {
+  max-width: 24rem;
+  margin-top: 0.5rem;
+}
+
+.builder-mode .artist-field-label {
+  margin: 0;
+}
+
+.builder-discoveries {
+  align-content: start;
+  padding-block: 0.75rem;
+}
+
+.builder-discoveries h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--aurral-text);
+  font-size: var(--aurral-font-lg);
+  font-weight: 700;
+}
+
+.builder-discoveries h3 svg {
+  width: var(--aurral-icon-sm);
+  height: var(--aurral-icon-sm);
+}
+
+.builder-discoveries .builder-list {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--aurral-text-muted);
+  font-size: var(--aurral-font-sm);
+}
+
+.builder-discoveries .builder-list strong {
+  color: var(--aurral-text);
+  font-weight: 600;
+}
