@@ -229,7 +229,7 @@ export async function startPerfApp({ artists }: { artists: number }) {
       ownerUserId: user.id,
       tracks: tracks.map(({ path: _path, ...track }) => track),
     });
-    playlistId = `shared:${playlist.id}`;
+    playlistId = playlist.id;
   }
   for (const { path } of editSongs.flat()) {
     await mkdir(dirname(path), { recursive: true });

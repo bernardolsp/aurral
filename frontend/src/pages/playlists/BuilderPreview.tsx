@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 import { Compass, ListMusic, Pencil, Plus } from "../../components/icons";
 import { DotLoader } from "../../components/DotLoader";
+import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
 import { playlistPath } from "../../navigation/playlistPaths";
 import { queryClient, queryKeys } from "../../queryClient.ts";
@@ -38,6 +39,7 @@ export function BuilderPreview({
   const { tracks, missingArtists } = review.result;
   const navigate = useNavigate();
   const { showSuccess } = useToast();
+  const { bootstrap } = useAuth();
   const [name, setName] = useState(`${artist.name} mix`.slice(0, 500));
   const [omitted, setOmitted] = useState<string[]>([]);
   const selected = tracks.filter((track) => !omitted.includes(track.id));
@@ -222,7 +224,9 @@ export function BuilderPreview({
             )}
             {remoteCount > 0 && (
               <p className="builder-hint">
-                You can download catalog tracks from the saved playlist.
+                {bootstrap?.api?.features?.includes("staticPlaylistFetchMissing")
+                  ? "After saving, use Fetch Missing to download the catalog tracks."
+                  : "You can download catalog tracks from the saved playlist."}
               </p>
             )}
           </form>

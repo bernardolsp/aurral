@@ -4,7 +4,7 @@
       "cold": 13,
       "warm": 13
     },
-    "bytes": 1652,
+    "bytes": 1749,
     "scans": []
   },
   "library home": {
@@ -516,5 +516,13 @@
         "warm": 0
       }
     }
+  },
+  "fetch missing in an available playlist": {
+    "queries": {
+      "cold": 4,
+      "warm": 4
+    },
+    "bytes": 117,
+    "scans": []
   }
 }

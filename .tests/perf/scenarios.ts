@@ -265,7 +265,7 @@ export const scenarios: Scenario[] = [
     name: "subsonic playlists",
     requests: ({ playlistId }) => [
       "/rest/getPlaylists",
-      `/rest/getPlaylist?id=${encodeURIComponent(playlistId)}`,
+      `/rest/getPlaylist?id=${encodeURIComponent(`shared:${playlistId}`)}`,
     ],
   },
   {
@@ -294,5 +294,14 @@ export const scenarios: Scenario[] = [
     name: "subsonic getSimilarSongs",
     random: true,
     requests: ({ trackId }) => [`/rest/getSimilarSongs?id=song:${trackId}&count=50`],
+  },
+  {
+    name: "fetch missing in an available playlist",
+    requests: ({ playlistId }) => [
+      {
+        path: `/api/playlists/static-playlists/${encodeURIComponent(playlistId)}/fetch-missing`,
+        json: {},
+      },
+    ],
   },
 ];
