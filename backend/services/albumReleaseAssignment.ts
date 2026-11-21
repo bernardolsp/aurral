@@ -7,6 +7,7 @@ import {
 } from "./trackMatching/postDownloadValidator.ts";
 import { mapRequest, trackRequestFor, type ReleaseManifest } from "./releaseManifest.ts";
 import { judgeRelease } from "./trackMatching/releaseJudge.ts";
+import { matchLargerEdition } from "./releaseResolver.ts";
 
 type ManifestJob = Parameters<typeof mapRequest>[1][number];
 type AlbumJob = ManifestJob & { upgradeForJobId?: string | null };
@@ -17,6 +18,7 @@ export async function assignDownloadedAlbumFiles({
   source,
   manifest,
   verified = false,
+  allowLargerEdition = false,
   parseAudio = parseFile,
 }: {
   jobs: AlbumJob[];
@@ -24,6 +26,7 @@ export async function assignDownloadedAlbumFiles({
   source: string;
   manifest: ReleaseManifest;
   verified?: boolean;
+  allowLargerEdition?: boolean;
   parseAudio?: typeof parseFile;
 }) {
   const readable = [];
@@ -38,6 +41,7 @@ export async function assignDownloadedAlbumFiles({
       const parsed = await parseAudio(resolved, { duration: true });
       readable.push({
         filePath: resolved,
+        groupId: parsed.common.musicbrainz_releasegroupid?.trim().toLowerCase(),
         evidence: downloadedFileEvidence(resolved, parsed, { album: manifest.title }),
       });
     } catch {
@@ -47,11 +51,27 @@ export async function assignDownloadedAlbumFiles({
   const unreadableCount = (filePaths || []).length - readable.length;
   const failedRelease = (reason: string) => ({
     accepted: [],
+    bonusFiles: [],
+    otherEdition: null,
     rejected: jobs.map((job) => ({ jobId: job.id, reason })),
     unreadableCount,
   });
-  const verdict = judgeRelease(manifest, { files: readable.map((entry) => entry.evidence) });
+  const files = readable.map((entry) => entry.evidence);
+  let verdict = judgeRelease(manifest, { files });
   if (!verified && unreadableCount) return failedRelease("The album contains unreadable audio");
+  const otherEdition =
+    allowLargerEdition &&
+    !verified &&
+    verdict.kind !== "exact" &&
+    readable.every(
+      (entry) => !entry.groupId || entry.groupId === manifest.releaseGroupMbid?.toLowerCase(),
+    )
+      ? await matchLargerEdition(manifest, files)
+      : null;
+  if (otherEdition) {
+    manifest = otherEdition.manifest;
+    verdict = otherEdition.verdict;
+  }
   const singleUpgrade = jobs.length === 1 && Boolean(jobs[0]?.upgradeForJobId);
   // A bonus track changes the edition, but a single upgrade can use a copy
   // placed at the requested track if that file verifies on its own.
@@ -62,18 +82,33 @@ export async function assignDownloadedAlbumFiles({
     !(singleUpgrade && verdict.reason === "extra-tracks")
   )
     return failedRelease(verdict.reason);
-  const { wanted } = mapRequest(manifest, jobs);
+  const { wanted, offManifest } = mapRequest(manifest, jobs);
+  if (otherEdition && offManifest.length) return failedRelease("requested recording missing");
+  const bonusFiles = [];
   const accepted = [];
   const rejected = [];
   for (const pair of verdict.assignment.pairs) {
     const job = jobs.find((entry) => entry.id === wanted.get(pair.trackIndex));
-    if (!job) continue;
+    if (!job && (!otherEdition || otherEdition.standardPlaces.has(pair.trackIndex))) continue;
     const track = manifest.tracks[pair.trackIndex];
     if (!track) continue;
-    const copies = singleUpgrade ? verdict.copiesForTrack[pair.trackIndex] : [pair.fileIndex];
+    const copies =
+      singleUpgrade || otherEdition ? verdict.copiesForTrack[pair.trackIndex] : [pair.fileIndex];
+    const bonus = {
+      artistName: track.artists[0] ?? manifest.artistNames[0],
+      trackName: track.title,
+      trackMbid: track.recordingMbid,
+      albumName: jobs[0]?.albumName,
+      albumMbid: manifest.releaseGroupMbid,
+      releaseMbid: manifest.releaseMbid,
+      trackNumber: track.trackNumber,
+      discNumber: track.discNumber,
+      durationMs: track.durationMs,
+      artistAliases: track.artistAliases,
+    };
     const request = {
-      ...trackRequestFor(job, manifest, pair.trackIndex),
-      upgradeForJobId: job.upgradeForJobId,
+      ...trackRequestFor(job ?? bonus, manifest, pair.trackIndex),
+      upgradeForJobId: job?.upgradeForJobId,
     };
     let rejection: string | null = "no match";
     for (const index of copies || []) {
@@ -91,19 +126,23 @@ export async function assignDownloadedAlbumFiles({
         },
       });
       if (validation.valid) {
-        accepted.push({
-          jobId: job.id,
-          filePath: entry.filePath,
-          trackNumber: track.trackNumber,
-          discNumber: track.discNumber,
-          validation,
-        });
+        if (!job)
+          bonusFiles.push({ track: bonus, filePath: entry.filePath, quality: validation.quality });
+        else
+          accepted.push({
+            jobId: job.id,
+            filePath: entry.filePath,
+            trackNumber: track.trackNumber,
+            discNumber: track.discNumber,
+            validation,
+          });
         rejection = null;
         break;
       }
       rejection = validation.reason || "no match";
     }
-    if (rejection) rejected.push({ jobId: job.id, reason: rejection });
+    if (rejection && otherEdition) return failedRelease(rejection);
+    if (rejection && job) rejected.push({ jobId: job.id, reason: rejection });
   }
-  return { accepted, rejected, unreadableCount };
+  return { accepted, rejected, unreadableCount, otherEdition, bonusFiles };
 }
